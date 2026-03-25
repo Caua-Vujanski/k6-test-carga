@@ -4,7 +4,11 @@
   "description": "",
   "main": "generate-users.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "k6": "K6_WEB_DASHBOARD=true k6 run k6/login-test.js",
+  "test:load": "k6 run k6-portal-aluno/login-portal-test.js",
+  "report": "node scripts/generate-professional-pdf.js",
+  "full:test": "npm run test:load && npm run report"
   },
   "repository": {
     "type": "git",
@@ -19,6 +23,9 @@
   "homepage": "https://github.com/Caua-Vujanski/k6-test-carga#readme",
   "dependencies": {
     "axios": "^1.13.6",
-    "bcrypt": "^6.0.0"
+    "bcrypt": "^6.0.0",
+    "cross-env": "^10.1.0",
+    "pdf-lib": "^1.17.1",
+    "puppeteer": "^24.40.0"
   }
 }
