@@ -4,7 +4,7 @@ const path = require('path');
 
 (async () => {
   try {
-    console.log('🚀 Gerando relatório profissional...');
+    console.log('🚀 Gerando relatório');
 
     const reportsDir = path.resolve(__dirname, '../reports');
 
