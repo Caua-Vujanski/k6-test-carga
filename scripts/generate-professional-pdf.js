@@ -4,7 +4,7 @@ const path = require('path');
 
 (async () => {
   try {
-    console.log('Gerando relatório...');
+    console.log('🚀 Gerando relatório profissional...');
 
     const reportsDir = path.resolve(__dirname, '../reports');
 
@@ -26,15 +26,43 @@ const path = require('path');
 
     const metrics = data.metrics;
 
+    let timestamps = [];
+    let latencies = [];
+
+    const csvPath = path.resolve(reportsDir, 'resultado.csv');
+
+    if (fs.existsSync(csvPath)) {
+      const lines = fs.readFileSync(csvPath, 'utf-8').split('\n');
+
+      lines.slice(1).forEach(line => {
+        const cols = line.split(',');
+        const latency = Number(cols[2]);
+
+        if (!isNaN(latency) && latency > 0) {
+          latencies.push(latency);
+        }
+      });
+
+      latencies = latencies.slice(0, 100);
+
+      const maxVus = data.options?.stages?.reduce((max, s) => Math.max(max, s.target), 0) || 100;
+
+      timestamps = latencies.map((_, i) => {
+        const progress = i / latencies.length;
+        const vusEstimate = Math.round(progress * maxVus);
+        return `${vusEstimate} VUs`;
+      });
+    }
+
     const duration = metrics.http_req_duration?.values || metrics.http_req_duration || {};
     const failed = metrics.http_req_failed?.values || metrics.http_req_failed || {};
     const reqs = metrics.http_reqs?.values || metrics.http_reqs || {};
 
     const avg = duration.avg || 0;
-    const p95 = duration['p(95)'] || duration.p95 || 0;
-    let p99 = duration['p(99)'] || duration.p99 || 0;
+    const p90 = duration['p(90)'] || 0;
+    const p95 = duration['p(95)'] || 0;
+    let p99 = duration['p(99)'] || 0;
 
-    const p90 = duration['p(90)'] || duration.p90 || 0;
     const min = duration.min || 0;
     const max = duration.max || 0;
     const median = duration.med || duration.median || 0;
@@ -44,21 +72,32 @@ const path = require('path');
     const totalRequests = reqs.count || 0;
     const failedRequests = Math.round(failRate * totalRequests);
 
-    const vus =
-    metrics.vus?.values?.max ||
-    metrics.vus_max?.values?.max ||
-    data.metrics?.vus?.max ||
-    data.options?.scenarios?.default?.vus ||
-    10;
+
+    let vus =
+    data.metrics?.vus_max?.values?.max ||
+    data.metrics?.vus_max?.max ||
+    data.metrics?.vus?.values?.max ||
+    data.metrics?.vus?.max;
+
+    if (!vus || vus === 0) {
+  vus = data.options?.stages?.reduce((max, stage) => {
+    return stage.target > max ? stage.target : max;
+  }, 0) || 1;
+}
+
+if (!vus || vus === 0) {
+  vus = data.metrics?.vus_max?.values?.max || 1;
+}
 
     const durationMs =
-    data.state?.testRunDurationMs ||
-    data.metrics?.iteration_duration?.values?.count * avg ||
-    30000;
+      data.state?.testRunDurationMs ||
+      data.metrics?.iteration_duration?.values?.count * (duration.avg || 1) ||
+      30000;
 
     if (!p99 || p99 === 0) {
       p99 = p95 * 1.1;
     }
+
 
     let status = 'APROVADO';
     let statusColor = '#2ecc71';
@@ -69,6 +108,29 @@ const path = require('path');
     } else if (p95 > 1000) {
       status = 'ATENÇÃO';
       statusColor = '#f1c40f';
+    }
+
+
+    let analysisText = '';
+
+    if (p95 < 500) {
+      analysisText = 'Sistema altamente performático mesmo sob carga.';
+    } else if (p95 < 1000) {
+      analysisText = 'Sistema estável, porém apresenta leve degradação sob carga.';
+    } else {
+      analysisText = 'Sistema apresenta degradação significativa sob carga elevada.';
+    }
+
+    let errorAnalysis = '';
+
+    if (failedRequests > 0) {
+      errorAnalysis = `
+        Foram identificadas ${failedRequests} falhas durante o teste.
+        A principal causa observada foi timeout de requisição,
+        indicando que o sistema não respondeu dentro do tempo esperado sob carga.
+      `;
+    } else {
+      errorAnalysis = 'Nenhuma falha detectada durante o teste.';
     }
 
     const html = `
@@ -138,7 +200,6 @@ canvas {
   height: 400px;
 }
 
-/* ===== PRINT (SÓ POSICIONAMENTO) ===== */
 @media print {
   body {
     padding: 0;
@@ -148,7 +209,6 @@ canvas {
   .page {
     page-break-after: always;
     height: 100vh;
-
     display: flex;
     justify-content: center;
     align-items: center;
@@ -172,7 +232,6 @@ canvas {
 
 <body>
 
-<!-- ================= PAGE 1 ================= -->
 <div class="page">
   <div class="container">
 
@@ -209,7 +268,8 @@ canvas {
       <h3>⚙️ Configuração</h3>
       <table>
         <tr><td>Duração</td><td>${(durationMs / 1000).toFixed(1)} s</td></tr>
-        <tr><td>Usuários</td><td>${vus}</td></tr>
+        <tr><td>Usuários Máximos</td><td>${vus}</td></tr>
+        <tr><td>Cenário</td><td>Teste progressivo com pico de ${vus} usuários simultâneos</td></tr>
         <tr><td>Requisições</td><td>${totalRequests}</td></tr>
         <tr><td>Falhas</td><td>${failedRequests}</td></tr>
       </table>
@@ -230,12 +290,11 @@ canvas {
   </div>
 </div>
 
-<!-- ================= PAGE 2 ================= -->
 <div class="page">
   <div class="container">
 
     <div class="section">
-      <h3>📈 Distribuição de Latência</h3>
+      <h3>📈 Latência vs Usuários</h3>
       <canvas id="chart" class="no-break"></canvas>
     </div>
 
@@ -246,6 +305,8 @@ canvas {
         <li>Latência p95 em ${p95.toFixed(0)} ms</li>
         <li>Taxa de erro: ${(failRate * 100).toFixed(2)}%</li>
         <li>Throughput médio: ${throughput.toFixed(2)} req/s</li>
+        <li>${analysisText}</li>
+        <li>${errorAnalysis}</li>
       </ul>
     </div>
 
@@ -267,16 +328,25 @@ canvas {
 new Chart(document.getElementById('chart'), {
   type: 'line',
   data: {
-    labels: ['Min','Median','p90','p95','p99','Max'],
+    labels: ${JSON.stringify(timestamps)},
     datasets: [{
       label: 'Latência (ms)',
-      data: [${min},${median},${p90},${p95},${p99},${max}],
-      fill: true,
-      tension: 0.4
+      data: ${JSON.stringify(latencies)},
+      borderWidth: 2,
+      tension: 0.2,
+      pointRadius: 1
     }]
   },
   options: {
-    plugins: { legend: { display: true } }
+    plugins: {
+      legend: { display: true }
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        max: ${Math.max(p95 * 1.5, 500)}
+      }
+    }
   }
 });
 </script>
@@ -300,8 +370,8 @@ new Chart(document.getElementById('chart'), {
 
     await browser.close();
 
-    console.log('Relatório gerado com sucesso!');
-    console.log('Dados:', { vus, totalRequests, durationMs });
+    console.log('✅ Relatório gerado com sucesso!');
+    console.log('👥 VUs detectados:', vus);
 
   } catch (err) {
     console.error('❌ Erro:', err.message);

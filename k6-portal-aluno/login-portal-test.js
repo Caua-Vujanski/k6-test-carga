@@ -1,10 +1,17 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { htmlReport } from "https://raw.githubusercontent.com/benc-uk/k6-reporter/main/dist/bundle.js";
+import { Trend } from 'k6/metrics';
+
+const latencyTrend = new Trend('latency_over_time');
 
 export const options = {
-  vus: 30,
-  duration: '30s',
+  stages: [
+    { duration: '30s', target: 20 },
+    { duration: '2m', target: 100 },
+    { duration: '5m', target: 200 },
+    { duration: '30s', target: 0 },
+  ],
 };
 
 const users = JSON.parse(open('./users.json'));
@@ -20,8 +27,11 @@ export default function () {
     }),
     {
       headers: { 'Content-Type': 'application/json' },
+      timeout: '60s'
     }
   );
+
+  latencyTrend.add(res.timings.duration);
 
   check(res, {
     'status 200': (r) => r.status === 200,
@@ -32,7 +42,7 @@ export default function () {
 
 export function handleSummary(data) {
   return {
-    "report.html": htmlReport(data),
-    "summary.json": JSON.stringify(data),
+    "reports/report.html": htmlReport(data),
+    "reports/summary.json": JSON.stringify(data, null, 2),
   };
 }
