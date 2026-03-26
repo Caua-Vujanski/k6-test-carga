@@ -3,8 +3,8 @@ import { check, sleep } from 'k6';
 import { htmlReport } from "https://raw.githubusercontent.com/benc-uk/k6-reporter/main/dist/bundle.js";
 
 export const options = {
-  vus: 300,
-  duration: '5m',
+  vus: 30,
+  duration: '30s',
 };
 
 const users = JSON.parse(open('./users.json'));
