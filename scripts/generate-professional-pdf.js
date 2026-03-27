@@ -2,6 +2,7 @@ const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
 
+
 (async () => {
   try {
     console.log('🚀 Gerando relatório');
@@ -294,8 +295,8 @@ canvas {
   <div class="container">
 
     <div class="section">
-      <h3>📈 Latência vs Usuários</h3>
-      <canvas id="chart" class="no-break"></canvas>
+      <h3>📊 Distribuição de Latência</h3>
+    <canvas id="chart" class="no-break"></canvas>
     </div>
 
     <div class="section">
@@ -325,28 +326,57 @@ canvas {
 </div>
 
 <script>
-new Chart(document.getElementById('chart'), {
+const ctx = document.getElementById('chart').getContext('2d');
+
+const p95Line = Array(${latencies.length}).fill(${p95.toFixed(2)});
+const p99Line = Array(${latencies.length}).fill(${p99.toFixed(2)});
+const safeLatencies = ${JSON.stringify(latencies)}.length > 0
+  ? ${JSON.stringify(latencies)}
+  : [${avg.toFixed(2)}, ${p95.toFixed(2)}, ${p99.toFixed(2)}];
+
+new Chart(ctx, {
   type: 'line',
   data: {
-    labels: ${JSON.stringify(timestamps)},
-    datasets: [{
-      label: 'Latência (ms)',
-      data: ${JSON.stringify(latencies)},
-      borderWidth: 2,
-      tension: 0.2,
-      pointRadius: 1
-    }]
+    labels: ${JSON.stringify(latencies.map((_, i) => i + 1))},
+    datasets: [
+      {
+        label: 'Latência (ms)',
+        data: safeLatencies,
+        borderColor: '#3498db',
+        borderWidth: 2,
+        tension: 0.3,
+        pointRadius: 0
+      },
+      {
+        label: 'p95',
+        data: p95Line,
+        borderColor: '#f39c12',
+        borderDash: [5, 5],
+        borderWidth: 2,
+        pointRadius: 0
+      },
+      {
+        label: 'p99',
+        data: p99Line,
+        borderColor: '#e74c3c',
+        borderDash: [5, 5],
+        borderWidth: 2,
+        pointRadius: 0
+      }
+    ]
   },
   options: {
     plugins: {
       legend: { display: true }
     },
+
     scales: {
-      y: {
-        beginAtZero: true,
-        max: ${Math.max(p95 * 1.5, 500)}
-      }
-    }
+  y: {
+    beginAtZero: false,
+    min: ${min.toFixed(2)} * 0.9,
+    max: ${p99.toFixed(2)} * 1.3
+  }
+}
   }
 });
 </script>
