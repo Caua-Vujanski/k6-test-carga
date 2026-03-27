@@ -8,8 +8,8 @@ const latencyTrend = new Trend('latency_over_time');
 export const options = {
   stages: [
     { duration: '30s', target: 20 },
-    { duration: '2m', target: 100 },
-    { duration: '5m', target: 200 },
+    { duration: '30s', target: 10 },
+    { duration: '30s', target: 20 },
     { duration: '30s', target: 0 },
   ],
 };
