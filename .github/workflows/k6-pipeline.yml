@@ -23,9 +23,9 @@ jobs:
           node-version: "20" # Using a recent LTS version
 
       - name: Set up k6
-        uses: grafana/setup-k6-action@v2
+        uses: grafana/setup-k6-action@v1
         with:
-          version: v0.49.0 # Specify a k6 version
+          k6-version: v0.49.0 # Specify a k6 version
 
       - name: Install dependencies
         run: npm install
