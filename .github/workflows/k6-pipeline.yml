@@ -20,12 +20,12 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20" # Using a recent LTS version
+          node-version: "22" # Using a recent LTS version
 
       - name: Set up k6
-        uses: grafana/setup-k6-action@v2
+        uses: grafana/setup-k6-action@v1
         with:
-          version: v0.49.0 # Specify a k6 version
+          version: v1.0.0 # Specify a k6 version
 
       - name: Install dependencies
         run: npm install
