@@ -9,7 +9,8 @@
     "k6": "K6_WEB_DASHBOARD=true k6 run k6/login-test.js",
     "test:load": "k6 run --out csv=reports/resultado.csv --summary-export=reports/summary.json k6-portal-aluno/login-portal-test.js",
     "report": "node scripts/generate-professional-pdf.js",
-    "full:test": "npm run clean && npm run test:load && npm run report"
+    "report:html": "node scripts/generate-html-report.js",
+    "full:test": "npm run clean && npm run test:load && npm run report && npm run report:html"
   },
   "repository": {
     "type": "git",
