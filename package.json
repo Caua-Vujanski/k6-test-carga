@@ -16,6 +16,7 @@
 
     "full:test": "npm run clean && npm run test:load && npm run report"
   },
+  "postinstall": "npx puppeteer browsers install chrome",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Caua-Vujanski/k6-test-carga.git"
