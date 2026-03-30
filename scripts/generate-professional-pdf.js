@@ -1,28 +1,27 @@
-const puppeteer = require('puppeteer');
-const fs = require('fs');
-const path = require('path');
-
+const puppeteer = require("puppeteer");
+const fs = require("fs");
+const path = require("path");
 
 (async () => {
   try {
-    console.log('🚀 Gerando relatório');
+    console.log("🚀 Gerando relatório");
 
-    const reportsDir = path.resolve(__dirname, '../reports');
+    const reportsDir = path.resolve(__dirname, "../reports");
 
     if (!fs.existsSync(reportsDir)) {
       fs.mkdirSync(reportsDir);
     }
 
-    const summaryPath = path.resolve(reportsDir, 'summary.json');
+    const summaryPath = path.resolve(reportsDir, "summary.json");
 
     if (!fs.existsSync(summaryPath)) {
-      throw new Error('❌ summary.json não encontrado. Execute o K6 antes.');
+      throw new Error("❌ summary.json não encontrado. Execute o K6 antes.");
     }
 
-    const data = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
 
     if (!data || !data.metrics) {
-      throw new Error('❌ Dados inválidos do K6');
+      throw new Error("❌ Dados inválidos do K6");
     }
 
     const metrics = data.metrics;
@@ -30,13 +29,13 @@ const path = require('path');
     let timestamps = [];
     let latencies = [];
 
-    const csvPath = path.resolve(reportsDir, 'resultado.csv');
+    const csvPath = path.resolve(reportsDir, "resultado.csv");
 
     if (fs.existsSync(csvPath)) {
-      const lines = fs.readFileSync(csvPath, 'utf-8').split('\n');
+      const lines = fs.readFileSync(csvPath, "utf-8").split("\n");
 
-      lines.slice(1).forEach(line => {
-        const cols = line.split(',');
+      lines.slice(1).forEach((line) => {
+        const cols = line.split(",");
         const latency = Number(cols[2]);
 
         if (!isNaN(latency) && latency > 0) {
@@ -46,7 +45,9 @@ const path = require('path');
 
       latencies = latencies.slice(0, 100);
 
-      const maxVus = data.options?.stages?.reduce((max, s) => Math.max(max, s.target), 0) || 100;
+      const maxVus =
+        data.options?.stages?.reduce((max, s) => Math.max(max, s.target), 0) ||
+        100;
 
       timestamps = latencies.map((_, i) => {
         const progress = i / latencies.length;
@@ -55,14 +56,16 @@ const path = require('path');
       });
     }
 
-    const duration = metrics.http_req_duration?.values || metrics.http_req_duration || {};
-    const failed = metrics.http_req_failed?.values || metrics.http_req_failed || {};
+    const duration =
+      metrics.http_req_duration?.values || metrics.http_req_duration || {};
+    const failed =
+      metrics.http_req_failed?.values || metrics.http_req_failed || {};
     const reqs = metrics.http_reqs?.values || metrics.http_reqs || {};
 
     const avg = duration.avg || 0;
-    const p90 = duration['p(90)'] || 0;
-    const p95 = duration['p(95)'] || 0;
-    let p99 = duration['p(99)'] || 0;
+    const p90 = duration["p(90)"] || 0;
+    const p95 = duration["p(95)"] || 0;
+    let p99 = duration["p(99)"] || 0;
 
     const min = duration.min || 0;
     const max = duration.max || 0;
@@ -73,22 +76,22 @@ const path = require('path');
     const totalRequests = reqs.count || 0;
     const failedRequests = Math.round(failRate * totalRequests);
 
-
     let vus =
-    data.metrics?.vus_max?.values?.max ||
-    data.metrics?.vus_max?.max ||
-    data.metrics?.vus?.values?.max ||
-    data.metrics?.vus?.max;
+      data.metrics?.vus_max?.values?.max ||
+      data.metrics?.vus_max?.max ||
+      data.metrics?.vus?.values?.max ||
+      data.metrics?.vus?.max;
 
     if (!vus || vus === 0) {
-  vus = data.options?.stages?.reduce((max, stage) => {
-    return stage.target > max ? stage.target : max;
-  }, 0) || 1;
-}
+      vus =
+        data.options?.stages?.reduce((max, stage) => {
+          return stage.target > max ? stage.target : max;
+        }, 0) || 1;
+    }
 
-if (!vus || vus === 0) {
-  vus = data.metrics?.vus_max?.values?.max || 1;
-}
+    if (!vus || vus === 0) {
+      vus = data.metrics?.vus_max?.values?.max || 1;
+    }
 
     const durationMs =
       data.state?.testRunDurationMs ||
@@ -99,30 +102,30 @@ if (!vus || vus === 0) {
       p99 = p95 * 1.1;
     }
 
-
-    let status = 'APROVADO';
-    let statusColor = '#2ecc71';
+    let status = "APROVADO";
+    let statusColor = "#2ecc71";
 
     if (p95 > 3000) {
-      status = 'CRÍTICO';
-      statusColor = '#e74c3c';
+      status = "CRÍTICO";
+      statusColor = "#e74c3c";
     } else if (p95 > 1000) {
-      status = 'ATENÇÃO';
-      statusColor = '#f1c40f';
+      status = "ATENÇÃO";
+      statusColor = "#f1c40f";
     }
 
-
-    let analysisText = '';
+    let analysisText = "";
 
     if (p95 < 500) {
-      analysisText = 'Sistema altamente performático mesmo sob carga.';
+      analysisText = "Sistema altamente performático mesmo sob carga.";
     } else if (p95 < 1000) {
-      analysisText = 'Sistema estável, porém apresenta leve degradação sob carga.';
+      analysisText =
+        "Sistema estável, porém apresenta leve degradação sob carga.";
     } else {
-      analysisText = 'Sistema apresenta degradação significativa sob carga elevada.';
+      analysisText =
+        "Sistema apresenta degradação significativa sob carga elevada.";
     }
 
-    let errorAnalysis = '';
+    let errorAnalysis = "";
 
     if (failedRequests > 0) {
       errorAnalysis = `
@@ -131,7 +134,7 @@ if (!vus || vus === 0) {
         indicando que o sistema não respondeu dentro do tempo esperado sob carga.
       `;
     } else {
-      errorAnalysis = 'Nenhuma falha detectada durante o teste.';
+      errorAnalysis = "Nenhuma falha detectada durante o teste.";
     }
 
     const html = `
@@ -316,8 +319,8 @@ canvas {
       <p>
         ${
           p95 < 1000
-            ? 'Sistema aprovado para carga atual.'
-            : 'Sistema requer otimizações antes de produção.'
+            ? "Sistema aprovado para carga atual."
+            : "Sistema requer otimizações antes de produção."
         }
       </p>
     </div>
@@ -385,25 +388,28 @@ new Chart(ctx, {
 </html>
 `;
 
-    const browser = await puppeteer.launch({ headless: true });
+    const browser = await puppeteer.launch({
+      headless: true,
+      executablePath: process.env.CHROME_PATH || undefined,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
     const page = await browser.newPage();
 
     await page.setContent(html);
 
-    const output = path.resolve(reportsDir, 'Relatorio-K6.pdf');
+    const output = path.resolve(reportsDir, "Relatorio-K6.pdf");
 
     await page.pdf({
       path: output,
-      format: 'A4',
+      format: "A4",
       printBackground: true,
     });
 
     await browser.close();
 
-    console.log('✅ Relatório gerado com sucesso!');
-    console.log('👥 VUs detectados:', vus);
-
+    console.log("✅ Relatório gerado com sucesso!");
+    console.log("👥 VUs detectados:", vus);
   } catch (err) {
-    console.error('❌ Erro:', err.message);
+    console.error("❌ Erro:", err.message);
   }
 })();

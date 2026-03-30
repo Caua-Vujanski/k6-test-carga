@@ -30,8 +30,10 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Install Puppeteer Chrome
-        run: npx --yes puppeteer browsers install chrome
+      - name: Install Chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
 
       - name: Run K6 and Generate Report
         run: npm run full:test
