@@ -32,12 +32,12 @@ const puppeteer = require("puppeteer");
     if (fs.existsSync(csvPath)) {
       const content = fs.readFileSync(csvPath, "utf-8");
       const lines = content.split("\n");
-      
+
       // Identifica o índice das colunas (geralmente 0=name, 2=value)
       lines.slice(1).forEach((line) => {
         if (!line.trim()) return;
         const cols = line.split(",");
-        
+
         // Filtra apenas métricas de latência de requisição HTTP
         if (cols[0] === "http_req_duration") {
           const latency = Number(cols[2]);
@@ -93,7 +93,7 @@ const puppeteer = require("puppeteer");
       }
     });
 
-    // Se houver discrepância entre o total do resumo e o total do CSV, 
+    // Se houver discrepância entre o total do resumo e o total do CSV,
     // priorizamos o total do CSV para a distribuição para fechar 100%
     const totalProcessed = allLatencies.length || totalRequests || 1;
     const bucketHtml = buckets
@@ -138,13 +138,19 @@ const puppeteer = require("puppeteer");
     }
 
     let analysisText = "";
-    if (p95 < 500) analysisText = "Sistema altamente performático mesmo sob carga.";
-    else if (p95 < 1000) analysisText = "Sistema estável, porém apresenta leve degradação sob carga.";
-    else analysisText = "Sistema apresenta degradação significativa sob carga elevada.";
+    if (p95 < 500)
+      analysisText = "Sistema altamente performático mesmo sob carga.";
+    else if (p95 < 1000)
+      analysisText =
+        "Sistema estável, porém apresenta leve degradação sob carga.";
+    else
+      analysisText =
+        "Sistema apresenta degradação significativa sob carga elevada.";
 
-    let errorAnalysis = failedRequests > 0 
-      ? `Foram identificadas ${failedRequests} falhas durante o teste.` 
-      : "Nenhuma falha detectada durante o teste.";
+    let errorAnalysis =
+      failedRequests > 0
+        ? `Foram identificadas ${failedRequests} falhas durante o teste.`
+        : "Nenhuma falha detectada durante o teste.";
 
     // HTML Template para o Puppeteer renderizar
     const templateHtml = `
@@ -172,7 +178,7 @@ const puppeteer = require("puppeteer");
   <div class="container">
     <h1>📊 Relatório de Performance</h1>
     <div class="status" style="background:${statusColor}">Status: ${status}</div>
-    
+
     <div class="grid">
       <div class="card"><div class="card-title">Médio</div><div class="card-value">${avg.toFixed(0)}ms</div></div>
       <div class="card"><div class="card-title">p95</div><div class="card-value">${p95.toFixed(0)}ms</div></div>
@@ -181,7 +187,7 @@ const puppeteer = require("puppeteer");
     </div>
 
     <div class="section">
-      <h3>📈 Evolução da Latência (100 reqs)</h3>
+      <h3>📈 Evolução da Latência (200 VU's)</h3>
       <div class="chart-container">
         <canvas id="latencyChart"></canvas>
       </div>
@@ -273,18 +279,28 @@ const puppeteer = require("puppeteer");
     const page = await browser.newPage();
     await page.setViewport({ width: 850, height: 1200 });
     await page.setContent(templateHtml);
-    
-    // Aguarda o gráfico renderizar
-    await new Promise(r => setTimeout(r, 800));
 
-    const latencyChartBase64 = await (await page.$('#latencyChart')).screenshot({ encoding: 'base64' });
-    const distributionChartBase64 = await (await page.$('#distributionChart')).screenshot({ encoding: 'base64' });
+    // Aguarda o gráfico renderizar
+    await new Promise((r) => setTimeout(r, 800));
+
+    const latencyChartBase64 = await (
+      await page.$("#latencyChart")
+    ).screenshot({ encoding: "base64" });
+    const distributionChartBase64 = await (
+      await page.$("#distributionChart")
+    ).screenshot({ encoding: "base64" });
     await browser.close();
 
     // Gerar HTML Final (Estático para e-mail)
     const finalHtml = templateHtml
-      .replace('<canvas id="latencyChart"></canvas>', `<img src="data:image/png;base64,${latencyChartBase64}" style="width:100%; max-width:750px;" />`)
-      .replace('<canvas id="distributionChart"></canvas>', `<img src="data:image/png;base64,${distributionChartBase64}" style="width:100%; max-width:750px;" />`)
+      .replace(
+        '<canvas id="latencyChart"></canvas>',
+        `<img src="data:image/png;base64,${latencyChartBase64}" style="width:100%; max-width:750px;" />`,
+      )
+      .replace(
+        '<canvas id="distributionChart"></canvas>',
+        `<img src="data:image/png;base64,${distributionChartBase64}" style="width:100%; max-width:750px;" />`,
+      )
       .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ""); // Remove scripts
 
     const htmlOutput = path.resolve(reportsDir, "Relatorio-K6.html");
