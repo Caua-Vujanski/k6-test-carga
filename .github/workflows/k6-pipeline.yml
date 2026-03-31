@@ -59,5 +59,7 @@ jobs:
           password: ${{ secrets.EMAIL_PASSWORD }} # GitHub Secret for email password (App Password for Gmail)
           subject: K6 Performance Test Report - ${{ github.event.repository.name }}
           html_body: ${{ steps.html_report.outputs.report_content }}
-          to: recipient@example.com # Replace with the recipient's email address
-          from: sender@example.com # Replace with the sender's email address
+          to: recipient@example.com # IMPORTANT: Replace with the recipient's email address
+          from: sender@example.com # IMPORTANT: Replace with the sender's email address
+          # IMPORTANT: You need to set up EMAIL_USERNAME and EMAIL_PASSWORD as GitHub Secrets in your repository settings.
+          # For Gmail, you might need to generate an App Password: https://support.google.com/accounts/answer/185833

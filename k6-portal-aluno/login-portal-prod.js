@@ -9,12 +9,12 @@ export const options = {
   stages: [
     { duration: "30s", target: 40 },
     { duration: "4m", target: 100 },
-    { duration: "2m", target: 80 },
+    { duration: "2m", target: 200 },
     { duration: "30s", target: 0 },
   ],
 };
 
-const users = JSON.parse(open("./users_prod.json"));
+const users = JSON.parse(open("./user_prod.json"));
 
 export default function () {
   const user = users[__VU % users.length];
