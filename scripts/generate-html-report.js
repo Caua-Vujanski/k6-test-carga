@@ -1,9 +1,10 @@
 const fs = require("fs");
 const path = require("path");
+const puppeteer = require("puppeteer");
 
 (async () => {
   try {
-    console.log("🚀 Gerando relatório HTML...");
+    console.log("🚀 Gerando relatório HTML para e-mail...");
 
     const reportsDir = path.resolve(__dirname, "../reports");
 
@@ -25,35 +26,30 @@ const path = require("path");
 
     const metrics = data.metrics;
 
-    let timestamps = [];
-    let latencies = [];
-
     const csvPath = path.resolve(reportsDir, "resultado.csv");
+    const allLatencies = [];
 
     if (fs.existsSync(csvPath)) {
-      const lines = fs.readFileSync(csvPath, "utf-8").split("\n");
-
+      const content = fs.readFileSync(csvPath, "utf-8");
+      const lines = content.split("\n");
+      
+      // Identifica o índice das colunas (geralmente 0=name, 2=value)
       lines.slice(1).forEach((line) => {
+        if (!line.trim()) return;
         const cols = line.split(",");
-        const latency = Number(cols[2]);
-
-        if (!isNaN(latency) && latency > 0) {
-          latencies.push(latency);
+        
+        // Filtra apenas métricas de latência de requisição HTTP
+        if (cols[0] === "http_req_duration") {
+          const latency = Number(cols[2]);
+          if (!isNaN(latency) && latency > 0) {
+            allLatencies.push(latency);
+          }
         }
       });
-
-      latencies = latencies.slice(0, 100);
-
-      const maxVus =
-        data.options?.stages?.reduce((max, s) => Math.max(max, s.target), 0) ||
-        100;
-
-      timestamps = latencies.map((_, i) => {
-        const progress = i / latencies.length;
-        const vusEstimate = Math.round(progress * maxVus);
-        return `${vusEstimate} VUs`;
-      });
     }
+
+    // Latências para o gráfico de evolução (limitado a 100 pontos para performance)
+    const latencies = allLatencies.slice(0, 100);
 
     const duration =
       metrics.http_req_duration?.values || metrics.http_req_duration || {};
@@ -75,20 +71,7 @@ const path = require("path");
     const totalRequests = reqs.count || 0;
     const failedRequests = Math.round(failRate * totalRequests);
 
-    // Cálculo da distribuição de latência (Buckets)
-    const allLatencies = [];
-    if (fs.existsSync(csvPath)) {
-      const content = fs.readFileSync(csvPath, "utf-8");
-      const lines = content.split("\n");
-      lines.slice(1).forEach((line) => {
-        const cols = line.split(",");
-        const latency = Number(cols[2]);
-        if (!isNaN(latency) && latency > 0) {
-          allLatencies.push(latency);
-        }
-      });
-    }
-
+    // Cálculo da distribuição de latência (Buckets) usando as latências filtradas
     const buckets = [
       { label: "< 200ms", max: 200, count: 0 },
       { label: "200ms - 500ms", min: 200, max: 500, count: 0 },
@@ -110,11 +93,13 @@ const path = require("path");
       }
     });
 
-    const totalValidReqs = allLatencies.length || 1;
+    // Se houver discrepância entre o total do resumo e o total do CSV, 
+    // priorizamos o total do CSV para a distribuição para fechar 100%
+    const totalProcessed = allLatencies.length || totalRequests || 1;
     const bucketHtml = buckets
       .filter((b) => b.count > 0)
       .map((b) => {
-        const percentage = ((b.count / totalValidReqs) * 100).toFixed(1);
+        const percentage = ((b.count / totalProcessed) * 100).toFixed(1);
         return `<tr><td>${b.label}</td><td>${b.count} reqs</td><td>${percentage}%</td></tr>`;
       })
       .join("");
@@ -130,10 +115,6 @@ const path = require("path");
         data.options?.stages?.reduce((max, stage) => {
           return stage.target > max ? stage.target : max;
         }, 0) || 1;
-    }
-
-    if (!vus || vus === 0) {
-      vus = data.metrics?.vus_max?.values?.max || 1;
     }
 
     const durationMs =
@@ -157,303 +138,159 @@ const path = require("path");
     }
 
     let analysisText = "";
+    if (p95 < 500) analysisText = "Sistema altamente performático mesmo sob carga.";
+    else if (p95 < 1000) analysisText = "Sistema estável, porém apresenta leve degradação sob carga.";
+    else analysisText = "Sistema apresenta degradação significativa sob carga elevada.";
 
-    if (p95 < 500) {
-      analysisText = "Sistema altamente performático mesmo sob carga.";
-    } else if (p95 < 1000) {
-      analysisText =
-        "Sistema estável, porém apresenta leve degradação sob carga.";
-    } else {
-      analysisText =
-        "Sistema apresenta degradação significativa sob carga elevada.";
-    }
+    let errorAnalysis = failedRequests > 0 
+      ? `Foram identificadas ${failedRequests} falhas durante o teste.` 
+      : "Nenhuma falha detectada durante o teste.";
 
-    let errorAnalysis = "";
-
-    if (failedRequests > 0) {
-      errorAnalysis = `
-        Foram identificadas ${failedRequests} falhas durante o teste.
-        A principal causa observada foi timeout de requisição,
-        indicando que o sistema não respondeu dentro do tempo esperado sob carga.
-      `;
-    } else {
-      errorAnalysis = "Nenhuma falha detectada durante o teste.";
-    }
-
-    const html = `
+    // HTML Template para o Puppeteer renderizar
+    const templateHtml = `
 <html>
 <head>
-<meta charset="UTF-8" />
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-<style>
-body {
-  font-family: Arial;
-  background: #f4f6f8;
-  padding: 30px;
-  color: #2d3436;
-}
-
-h1 { margin-bottom: 5px; }
-.subtitle { color: #636e72; margin-bottom: 20px; }
-
-.status {
-  color: white;
-  padding: 15px;
-  border-radius: 8px;
-  font-weight: bold;
-  text-align: center;
-  margin-bottom: 20px;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 15px;
-  margin-bottom: 20px;
-}
-
-.card {
-  background: white;
-  padding: 15px;
-  border-radius: 8px;
-  text-align: center;
-}
-
-.card-title { font-size: 12px; color: #636e72; }
-.card-value { font-size: 22px; font-weight: bold; }
-
-.section {
-  background: white;
-  padding: 20px;
-  border-radius: 8px;
-  margin-top: 20px;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-th {
-  background: #f8f9fa;
-  padding: 10px;
-  text-align: left;
-  border-bottom: 2px solid #dee2e6;
-}
-
-td {
-  padding: 8px;
-  border-bottom: 1px solid #eee;
-}
-
-.analysis li { margin-bottom: 6px; }
-
-canvas {
-  max-width: 100%;
-  height: 400px;
-}
-
-@media print {
-  body {
-    padding: 0;
-    margin: 0;
-  }
-
-  .page {
-    page-break-after: always;
-    height: 100vh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-  }
-
-  .page:last-child {
-    page-break-after: auto;
-  }
-
-  .container {
-    width: 90%;
-    max-width: 900px;
-  }
-
-  .no-break {
-    page-break-inside: avoid;
-  }
-}
-</style>
+  <meta charset="UTF-8" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f6f8; padding: 20px; color: #2d3436; }
+    .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+    .status { color: white; padding: 15px; border-radius: 8px; font-weight: bold; text-align: center; margin-bottom: 20px; }
+    .grid { display: table; width: 100%; border-spacing: 10px; margin-bottom: 20px; }
+    .card { display: table-cell; background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; width: 25%; }
+    .card-title { font-size: 12px; color: #636e72; }
+    .card-value { font-size: 20px; font-weight: bold; }
+    .section { margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #f8f9fa; padding: 10px; text-align: left; border-bottom: 2px solid #dee2e6; }
+    td { padding: 8px; border-bottom: 1px solid #eee; }
+    .chart-container { width: 100%; height: 300px; margin-bottom: 20px; }
+    canvas { width: 100% !important; height: 300px !important; }
+  </style>
 </head>
-
 <body>
-
-<div class="page">
   <div class="container">
-
     <h1>📊 Relatório de Performance</h1>
-    <div class="subtitle">Teste de carga automatizado</div>
-
-    <div class="status" style="background:${statusColor}">
-      Status: ${status}
-    </div>
-
+    <div class="status" style="background:${statusColor}">Status: ${status}</div>
+    
     <div class="grid">
-      <div class="card">
-        <div class="card-title">Tempo Médio</div>
-        <div class="card-value">${avg.toFixed(0)} ms</div>
-      </div>
+      <div class="card"><div class="card-title">Médio</div><div class="card-value">${avg.toFixed(0)}ms</div></div>
+      <div class="card"><div class="card-title">p95</div><div class="card-value">${p95.toFixed(0)}ms</div></div>
+      <div class="card"><div class="card-title">p99</div><div class="card-value">${p99.toFixed(0)}ms</div></div>
+      <div class="card"><div class="card-title">Req/s</div><div class="card-value">${throughput.toFixed(2)}</div></div>
+    </div>
 
-      <div class="card">
-        <div class="card-title">p95</div>
-        <div class="card-value">${p95.toFixed(0)} ms</div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">p99</div>
-        <div class="card-value">${p99.toFixed(0)} ms</div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Req/s</div>
-        <div class="card-value">${throughput.toFixed(2)}</div>
+    <div class="section">
+      <h3>📈 Evolução da Latência (100 reqs)</h3>
+      <div class="chart-container">
+        <canvas id="latencyChart"></canvas>
       </div>
     </div>
 
     <div class="section">
-      <h3>⚙️ Configuração</h3>
-      <table>
-        <tr><td>Duração</td><td>${(durationMs / 1000).toFixed(1)} s</td></tr>
-        <tr><td>Usuários Máximos</td><td>${vus}</td></tr>
-        <tr><td>Cenário</td><td>Teste progressivo com pico de ${vus} usuários simultâneos</td></tr>
-        <tr><td>Requisições</td><td>${totalRequests}</td></tr>
-        <tr><td>Falhas</td><td>${failedRequests}</td></tr>
-      </table>
+      <h3>📊 Distribuição por Faixa</h3>
+      <div class="chart-container">
+        <canvas id="distributionChart"></canvas>
+      </div>
     </div>
 
     <div class="section">
-      <h3>📊 Estatísticas de Latência</h3>
+      <h3>⌛ Tabela de Distribuição</h3>
       <table>
-        <tr><td>Min</td><td>${min.toFixed(2)} ms</td></tr>
-        <tr><td>Median</td><td>${median.toFixed(2)} ms</td></tr>
-        <tr><td>p90</td><td>${p90.toFixed(2)} ms</td></tr>
-        <tr><td>p95</td><td>${p95.toFixed(2)} ms</td></tr>
-        <tr><td>p99</td><td>${p99.toFixed(2)} ms</td></tr>
-        <tr><td>Max</td><td>${max.toFixed(2)} ms</td></tr>
-      </table>
-    </div>
-
-    <div class="section">
-      <h3>⌛ Distribuição por Faixa de Tempo</h3>
-      <table>
-        <tr>
-          <th>Faixa</th>
-          <th>Quantidade</th>
-          <th>Percentual</th>
-        </tr>
+        <tr><th>Faixa</th><th>Quantidade</th><th>%</th></tr>
         ${bucketHtml}
       </table>
     </div>
 
-  </div>
-</div>
-
-<div class="page">
-  <div class="container">
-
-    <div class="section">
-      <h3>📊 Distribuição de Latência</h3>
-    <canvas id="chart" class="no-break"></canvas>
-    </div>
-
     <div class="section">
       <h3>🧠 Análise Técnica</h3>
-      <ul class="analysis">
-        <li>Teste executado com ${vus} usuários simultâneos</li>
-        <li>Latência p95 em ${p95.toFixed(0)} ms</li>
-        <li>Taxa de erro: ${(failRate * 100).toFixed(2)}%</li>
-        <li>Throughput médio: ${throughput.toFixed(2)} req/s</li>
+      <ul>
+        <li>Usuários Simultâneos (VUs): ${vus}</li>
+        <li>Latência p95: ${p95.toFixed(0)} ms</li>
+        <li>Taxa de Erro: ${(failRate * 100).toFixed(2)}%</li>
+        <li>Throughput: ${throughput.toFixed(2)} req/s</li>
         <li>${analysisText}</li>
         <li>${errorAnalysis}</li>
       </ul>
     </div>
-
-    <div class="section">
-      <h3>📌 Conclusão</h3>
-      <p>
-        ${
-          p95 < 1000
-            ? "Sistema aprovado para carga atual."
-            : "Sistema requer otimizações antes de produção."
-        }
-      </p>
-    </div>
-
   </div>
-</div>
 
-<script>
-const ctx = document.getElementById('chart').getContext('2d');
-
-const p95Line = Array(${latencies.length}).fill(${p95.toFixed(2)});
-const p99Line = Array(${latencies.length}).fill(${p99.toFixed(2)});
-const safeLatencies = ${JSON.stringify(latencies)}.length > 0
-  ? ${JSON.stringify(latencies)}
-  : [${avg.toFixed(2)}, ${p95.toFixed(2)}, ${p99.toFixed(2)}];
-
-new Chart(ctx, {
-  type: 'line',
-  data: {
-    labels: ${JSON.stringify(latencies.map((_, i) => i + 1))},
-    datasets: [
-      {
-        label: 'Latência (ms)',
-        data: safeLatencies,
-        borderColor: '#3498db',
-        borderWidth: 2,
-        tension: 0.3,
-        pointRadius: 0
+  <script>
+    // Gráfico de Latência
+    const ctxLatency = document.getElementById('latencyChart').getContext('2d');
+    new Chart(ctxLatency, {
+      type: 'line',
+      data: {
+        labels: ${JSON.stringify(latencies.map((_, i) => i + 1))},
+        datasets: [{
+          label: 'Latência (ms)',
+          data: ${JSON.stringify(latencies)},
+          borderColor: '#3498db',
+          backgroundColor: 'rgba(52, 152, 219, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 0
+        }]
       },
-      {
-        label: 'p95',
-        data: p95Line,
-        borderColor: '#f39c12',
-        borderDash: [5, 5],
-        borderWidth: 2,
-        pointRadius: 0
-      },
-      {
-        label: 'p99',
-        data: p99Line,
-        borderColor: '#e74c3c',
-        borderDash: [5, 5],
-        borderWidth: 2,
-        pointRadius: 0
+      options: {
+        animation: false,
+        responsive: false,
+        maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true } }
       }
-    ]
-  },
-  options: {
-    plugins: {
-      legend: { display: true }
-    },
+    });
 
-    scales: {
-  y: {
-    beginAtZero: false,
-    min: ${min.toFixed(2)} * 0.9,
-    max: ${p99.toFixed(2)} * 1.3
-  }
-}
-  }
-});
-</script>
-
+    // Gráfico de Distribuição
+    const ctxDist = document.getElementById('distributionChart').getContext('2d');
+    const buckets = ${JSON.stringify(buckets)};
+    new Chart(ctxDist, {
+      type: 'bar',
+      data: {
+        labels: buckets.map(b => b.label),
+        datasets: [{
+          label: 'Quantidade de Requisições',
+          data: buckets.map(b => b.count),
+          backgroundColor: '#3498db'
+        }]
+      },
+      options: {
+        animation: false,
+        responsive: false,
+        maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  </script>
 </body>
-</html>
-`;
+</html>`;
+
+    // Usar Puppeteer para renderizar e capturar imagem do gráfico
+    const browser = await puppeteer.launch({
+      headless: true,
+      executablePath: process.env.CHROME_PATH || undefined,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
+    const page = await browser.newPage();
+    await page.setViewport({ width: 850, height: 1200 });
+    await page.setContent(templateHtml);
+    
+    // Aguarda o gráfico renderizar
+    await new Promise(r => setTimeout(r, 800));
+
+    const latencyChartBase64 = await (await page.$('#latencyChart')).screenshot({ encoding: 'base64' });
+    const distributionChartBase64 = await (await page.$('#distributionChart')).screenshot({ encoding: 'base64' });
+    await browser.close();
+
+    // Gerar HTML Final (Estático para e-mail)
+    const finalHtml = templateHtml
+      .replace('<canvas id="latencyChart"></canvas>', `<img src="data:image/png;base64,${latencyChartBase64}" style="width:100%; max-width:750px;" />`)
+      .replace('<canvas id="distributionChart"></canvas>', `<img src="data:image/png;base64,${distributionChartBase64}" style="width:100%; max-width:750px;" />`)
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ""); // Remove scripts
 
     const htmlOutput = path.resolve(reportsDir, "Relatorio-K6.html");
-    fs.writeFileSync(htmlOutput, html);
+    fs.writeFileSync(htmlOutput, finalHtml);
 
-    console.log("✅ Relatório HTML gerado com sucesso em: " + htmlOutput);
+    console.log("✅ Relatório HTML estático gerado com sucesso para o e-mail!");
   } catch (err) {
     console.error("❌ Erro:", err.message);
   }
