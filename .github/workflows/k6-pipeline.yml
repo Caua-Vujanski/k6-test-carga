@@ -36,13 +36,17 @@ jobs:
           sudo apt-get install -y google-chrome-stable
 
       - name: Run K6 and Generate Report
-        run: npm run full:test
+        run: npm run full:prod
         env:
           CHROME_PATH: /usr/bin/google-chrome-stable
 
       - name: Get HTML Report Content
         id: html_report
-        run: echo "report_content=$(cat reports/Relatorio-K6.html)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "report_content<<EOF" >> "$GITHUB_OUTPUT"
+          cat reports/Relatorio-K6.html >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Upload K6 PDF Report
         uses: actions/upload-artifact@v4
@@ -53,11 +57,12 @@ jobs:
       - name: Send Email with Report
         uses: dawidd6/action-send-mail@v3
         with:
-          server_address: smtp.gmail.com # Replace with your SMTP server (e.g., smtp.gmail.com)
-          server_port: 465 # Replace with your SMTP port (e.g., 587 for TLS, 465 for SSL)
-          username: ${{ secrets.EMAIL_USERNAME }} # GitHub Secret for email username
-          password: ${{ secrets.EMAIL_PASSWORD }} # GitHub Secret for email password (App Password for Gmail)
-          subject: K6 Performance Test Report - ${{ github.event.repository.name }}
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: Production Performance Test Report
           html_body: ${{ steps.html_report.outputs.report_content }}
-          to: recipient@example.com # Replace with the recipient's email address
-          from: sender@example.com # Replace with the sender's email address
+          to: ${{ secrets.EMAIL_RECIPIENTS }}
+          from: ${{ secrets.EMAIL_USERNAME }}
+          attachments: reports/Relatorio-K6.pdf
